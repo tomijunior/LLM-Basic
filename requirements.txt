@@ -1,4 +1,6 @@
 regex
 datasets
+numpy
 transformers 
 tokenizers
+tqdm
