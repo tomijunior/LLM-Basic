@@ -1,10 +1,14 @@
 from datasets import load_dataset
-from tokenizers import Tokenizer, models, pre_tokenizers, trainers, decoders, processors, normalizers
+import regex as re
+from tokenizers import Tokenizer, models, pre_tokenizers, trainers, decoders, processors, Regex
+from tokenizers.pre_tokenizers import Split, ByteLevel, Sequence
 from transformers import PreTrainedTokenizerFast
 
 # 1. Siapkan data teks (contoh: dataset wikitext atau file teks lokal Anda)
 # Untuk file lokal, gunakan: load_dataset("text", data_files={"train": "data.txt"})
 dataset = load_dataset("indonesian-nlp/wikipedia-10k", "wikipedia-id", split="test")
+total = len(dataset)
+print(f"✅ Dataset loaded : {total:,} articles\n")
 
 # 2. Buat generator iterator untuk menghemat memori RAM
 def batch_iterator(batch_size=1000):
@@ -14,18 +18,28 @@ def batch_iterator(batch_size=1000):
 # 2. Inisialisasi arsitektur Tokenizer kosong dengan model BPE
 tokenizer = Tokenizer(models.BPE(unk_token="<unk>"))
 
-# 3. TAMBAHKAN BLOK NORMALISASI (Diurutkan secara sekuensial)
-tokenizer.normalizer = normalizers.Sequence([
-    normalizers.NFD(),              # Memisahkan karakter aksen (misal: é menjadi e + ´)
-    normalizers.Lowercase(),        # Mengubah semua teks menjadi huruf kecil
-    normalizers.StripAccents(),     # Menghapus komponen aksen hasil pemisahan NFD
-    normalizers.Replace(" {2,}", " ") # Regex untuk mereduksi spasi ganda menjadi satu spasi
+# 3. Tambahkan Pre-Tokenizer (ByteLevel untuk model modern)
+pattern_str = r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"
+
+# Compile regex menggunakan pustaka 'regex' eksternal untuk validasi Unicode
+compiled_regex = re.compile(pattern_str)
+
+tokenizer.pre_tokenizer = Sequence([
+    # Komponen 1: Split berdasarkan Regex
+    Split(
+        pattern=Regex(pattern_str),
+        behavior="removed",  # "behavior": "Removed" di JSON
+        invert=True          # "invert": true di JSON
+    ),
+    # Komponen 2: ByteLevel tanpa regex internal tambahan
+    ByteLevel(
+        add_prefix_space=False, # "add_prefix_space": false
+        trim_offsets=True,      # "trim_offsets": true
+        use_regex=False         # "use_regex": false
+    )
 ])
 
-# 4. Tambahkan Pre-Tokenizer (ByteLevel untuk model modern)
-tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
-
-# 5. DEFINISIKAN DAFTAR SPECIAL TOKENS KUSTOM
+# 4. DEFINISIKAN DAFTAR SPECIAL TOKENS KUSTOM
 # Menyertakan token kontrol chat standard (<|im_start|>, <|im_end|>)
 special_tokens_list = [
     "<unk>",        # Unknown token (ID: 0)
@@ -42,20 +56,20 @@ special_tokens_list = [
     "<commit_after>", "<reponame>",
 ]
 
-# 6. Konfigurasi Trainer BPE
+# 5. Konfigurasi Trainer BPE
 trainer = trainers.BpeTrainer(
     vocab_size=32000,
     special_tokens=special_tokens_list
 )
 
-# 7. Jalankan pelatihan menggunakan iterator data
+# 6. Jalankan pelatihan menggunakan iterator data
 tokenizer.train_from_iterator(batch_iterator(), trainer=trainer)
 
-# 8. Pasang Decoder & Post-Processor
+# 7. Pasang Decoder & Post-Processor
 tokenizer.decoder = decoders.ByteLevel()
 tokenizer.post_processor = processors.ByteLevel(trim_offsets=False)
 
-# 9. Bungkus ke dalam kelas Transformers dengan pemetaan Special Tokens yang eksplisit
+# 8. Bungkus ke dalam kelas Transformers dengan pemetaan Special Tokens yang eksplisit
 fast_tokenizer = PreTrainedTokenizerFast(
     tokenizer_object=tokenizer,
     bos_token="<s>",
@@ -71,6 +85,6 @@ fast_tokenizer = PreTrainedTokenizerFast(
     "<commit_after>", "<reponame>"]
 )
 
-# 10. Simpan hasil latihan Anda
+# 9. Simpan hasil latihan Anda
 fast_tokenizer.save_pretrained("./tokenizer_indonesia_transformer")
 print("Pelatihan tokenizer selesai dengan normalisasi teks!")
