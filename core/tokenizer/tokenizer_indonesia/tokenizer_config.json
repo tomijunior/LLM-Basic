@@ -1,6 +1,6 @@
 {
   "model_type": "bpe",
-  "vocab_size": 5000,
+  "vocab_size": 15000,
   "special_tokens": [
     "<|endoftext|>",
     "<fim_prefix>",
@@ -23,5 +23,5 @@
     "<reponame>"
   ],
   "trained_on": "indonesian-nlp/wikipedia-10k",
-  "date": "2026-05-14T11:41:12.197438"
+  "date": "2026-05-14T12:11:56.337779"
 }
